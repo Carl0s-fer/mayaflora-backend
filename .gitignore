@@ -1,0 +1,5 @@
+.env
+mayaflora.db
+__pycache__/
+*.pyc
+imagenes_escaneos/
