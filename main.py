@@ -25,7 +25,13 @@ app.add_middleware(
 
 # Inicializar base de datos
 db = BaseDatos(NOMBRE_BASE_DATOS)
-
+@app.on_event("startup")
+async def startup_event():
+    resultado = db.crear_usuario("admin", "admin123")
+    if resultado["exito"]:
+        print("✅ Usuario admin creado")
+    else:
+        print("ℹ️ Usuario admin ya existe")
 # Crear carpeta para imágenes si no existe
 if not os.path.exists(CARPETA_IMAGENES):
     os.makedirs(CARPETA_IMAGENES)
