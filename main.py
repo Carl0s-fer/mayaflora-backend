@@ -8,255 +8,152 @@ import requests
 import os
 from datetime import datetime
 import numpy as np
-
 from base_datos import BaseDatos
 from configuracion import *
 
-app = FastAPI(title="Mayaflora API - Detector de Hongos en Orquídeas")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+app = FastAPI(title="Mayaflora API")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 db = BaseDatos(NOMBRE_BASE_DATOS)
 
 try:
     resultado = db.crear_usuario("admin", "admin123")
-    if resultado["exito"]:
-        print("✅ Usuario admin creado automáticamente")
-    else:
-        print("ℹ️ Usuario admin ya existe")
-except Exception as e:
-    print(f"⚠️ Error al crear admin: {e}")
+    print("✅ Admin creado" if resultado["exito"] else "ℹ️ Admin existe")
+except: pass
 
-if not os.path.exists(CARPETA_IMAGENES):
-    os.makedirs(CARPETA_IMAGENES)
+if not os.path.exists(CARPETA_IMAGENES): os.makedirs(CARPETA_IMAGENES)
 
 @app.get("/")
-def raiz():
-    return {
-        "mensaje": "Bienvenido a Mayaflora API",
-        "version": "1.0",
-        "descripcion": "Sistema de detección de hongos en hojas de orquídeas"
-    }
+def raiz(): return {"mensaje": "Mayaflora API", "version": "1.0"}
 
 @app.post("/api/registro")
 async def registrar_usuario(nombre_usuario: str = Form(...), contrasena: str = Form(...)):
-    resultado = db.crear_usuario(nombre_usuario, contrasena)
-    if resultado["exito"]:
-        return JSONResponse(content=resultado, status_code=201)
-    else:
-        return JSONResponse(content=resultado, status_code=400)
+    r = db.crear_usuario(nombre_usuario, contrasena)
+    return JSONResponse(content=r, status_code=201 if r["exito"] else 400)
 
 @app.post("/api/login")
 async def iniciar_sesion(nombre_usuario: str = Form(...), contrasena: str = Form(...)):
-    resultado = db.verificar_usuario(nombre_usuario, contrasena)
-    if resultado["exito"]:
-        return JSONResponse(content=resultado, status_code=200)
-    else:
-        return JSONResponse(content=resultado, status_code=401)
-    
-    def analizar_colores_hongos(imagen_bytes):
+    r = db.verificar_usuario(nombre_usuario, contrasena)
+    return JSONResponse(content=r, status_code=200 if r["exito"] else 401)
+
+def analizar_colores_hongos(imagen_bytes):
     try:
         img = Image.open(io.BytesIO(imagen_bytes)).convert('RGB')
         img_array = np.array(img)
-        
-        r = img_array[:,:,0].astype(float)
-        g = img_array[:,:,1].astype(float)
-        b = img_array[:,:,2].astype(float)
-        
-        luminosidad = 0.299 * r + 0.587 * g + 0.114 * b
-        manchas_oscuras = np.sum(luminosidad < 60)
-        porc_oscuras = (manchas_oscuras / luminosidad.size) * 100
-        manchas_marron = np.sum((r > 80) & (r < 150) & (g > 50) & (g < 120) & (b < 80))
-        porc_marron = (manchas_marron / luminosidad.size) * 100
-        manchas_amarillo = np.sum((r > 180) & (g > 180) & (b < 120))
-        porc_amarillo = (manchas_amarillo / luminosidad.size) * 100
-        
-        score = 0
-        if porc_oscuras > 10: score += 35
-        if porc_marron > 3: score += 40
-        if porc_amarillo > 2: score += 25
-        
-        print(f"🎨 Análisis de color: Oscuras={porc_oscuras:.2f}%, Marrones={porc_marron:.2f}%, Amarillas={porc_amarillo:.2f}%, Score={score}")
-        
-        return {"score": score, "detalles": {"oscuras": porc_oscuras, "marrones": porc_marron, "amarillas": porc_amarillo}}
-    except Exception as e:
-        print(f"⚠️ Error en análisis de color: {str(e)}")
-        return {"score": 0, "detalles": {}}
+        r, g, b = img_array[:,:,0].astype(float), img_array[:,:,1].astype(float), img_array[:,:,2].astype(float)
+        lum = 0.299*r + 0.587*g + 0.114*b
+        osc = np.sum(lum < 60) / lum.size * 100
+        mar = np.sum((r>80)&(r<150)&(g>50)&(g<120)&(b<80)) / lum.size * 100
+        ama = np.sum((r>180)&(g>180)&(b<120)) / lum.size * 100
+        score = (35 if osc>10 else 0) + (40 if mar>3 else 0) + (25 if ama>2 else 0)
+        return {"score": score, "detalles": {"oscuras": osc, "marrones": mar, "amarillas": ama}}
+    except: return {"score": 0, "detalles": {}}
 
 def analizar_con_huggingface(imagen_bytes):
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}", "Content-Type": "application/octet-stream"}
-    print(f"🔍 Analizando con HF - Modelo: {HUGGINGFACE_MODEL}")
-    
     try:
         img = Image.open(io.BytesIO(imagen_bytes))
         img.verify()
-        img = Image.open(io.BytesIO(imagen_bytes))
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        buffer = io.BytesIO()
-        img.save(buffer, format='JPEG', quality=95)
-        imagen_bytes = buffer.getvalue()
-        
-        response = requests.post(HUGGINGFACE_API_URL, headers=headers, data=imagen_bytes, timeout=60)
-        
-        if response.status_code == 200:
-            resultado = response.json()
-            if isinstance(resultado, list) and len(resultado) > 0:
-                for pred in resultado[:3]:
-                    print(f"   - {pred.get('label', 'N/A')}: {pred.get('score', 0)*100:.2f}%")
-            return {"exito": True, "predicciones": resultado}
-        elif response.status_code == 503:
-            print("⏳ Modelo cargándose...")
+        img = Image.open(io.BytesIO(imagen_bytes)).convert('RGB')
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=95)
+        r = requests.post(HUGGINGFACE_API_URL, headers=headers, data=buf.getvalue(), timeout=60)
+        if r.status_code == 200: return {"exito": True, "predicciones": r.json()}
+        if r.status_code == 503:
             import time
             time.sleep(10)
-            response = requests.post(HUGGINGFACE_API_URL, headers=headers, data=imagen_bytes, timeout=60)
-            if response.status_code == 200:
-                return {"exito": True, "predicciones": response.json()}
-        
-        print(f"❌ Error {response.status_code}")
-        return {"exito": False, "mensaje": f"Error HF: {response.status_code}"}
-    except Exception as e:
-        print(f"❌ Excepción: {str(e)}")
-        return {"exito": False, "mensaje": str(e)}
+            r = requests.post(HUGGINGFACE_API_URL, headers=headers, data=buf.getvalue(), timeout=60)
+            if r.status_code == 200: return {"exito": True, "predicciones": r.json()}
+        return {"exito": False, "mensaje": f"Error {r.status_code}"}
+    except Exception as e: return {"exito": False, "mensaje": str(e)}
 
-def interpretar_resultado(predicciones, analisis_color):
-    if not predicciones:
-        return {"resultado": "Error", "confianza": 0.0, "mensaje": "No se pudo analizar"}
-    
-    mejor_prediccion = max(predicciones, key=lambda x: x['score'])
-    etiqueta = mejor_prediccion['label'].lower()
-    confianza_hf = mejor_prediccion['score'] * 100
-    score_color = analisis_color.get("score", 0)
-    tiene_enfermedad_hf = any(palabra in etiqueta for palabra in PALABRAS_CLAVE_ENFERMEDAD)
-    
-    if score_color > 60:
-        confianza_final = min(score_color + 10, 95)
-        return {"resultado": "Enferma", "confianza": round(confianza_final, 2), "mensaje": f"Manchas sospechosas detectadas ({confianza_final:.1f}%)", "detalle": f"Score: {score_color}"}
-    elif tiene_enfermedad_hf and confianza_hf > 30:
-        confianza_final = (confianza_hf + score_color) / 2
-        return {"resultado": "Enferma", "confianza": round(confianza_final, 2), "mensaje": f"Posible presencia de hongos ({confianza_final:.1f}%)", "detalle": etiqueta}
-    elif score_color > 40:
-        confianza_final = max(score_color, 60)
-        return {"resultado": "Enferma", "confianza": round(confianza_final, 2), "mensaje": f"Anomalías detectadas ({confianza_final:.1f}%)", "detalle": "Manchas"}
-    else:
-        confianza_final = max(100 - score_color, 70)
-        return {"resultado": "Sana", "confianza": round(confianza_final, 2), "mensaje": f"Orquídea sana ({confianza_final:.1f}%)", "detalle": "Sin anomalías"}
+def interpretar_resultado(preds, ac):
+    if not preds: return {"resultado": "Error", "confianza": 0.0, "mensaje": "Error"}
+    mp = max(preds, key=lambda x: x['score'])
+    et, chf, sc = mp['label'].lower(), mp['score']*100, ac.get("score", 0)
+    enf = any(p in et for p in PALABRAS_CLAVE_ENFERMEDAD)
+    if sc>60: return {"resultado": "Enferma", "confianza": round(min(sc+10,95),2), "mensaje": f"Manchas detectadas", "detalle": f"Score:{sc}"}
+    if enf and chf>30: return {"resultado": "Enferma", "confianza": round((chf+sc)/2,2), "mensaje": "Posible hongo", "detalle": et}
+    if sc>40: return {"resultado": "Enferma", "confianza": round(max(sc,60),2), "mensaje": "Anomalías", "detalle": "Manchas"}
+    return {"resultado": "Sana", "confianza": round(max(100-sc,70),2), "mensaje": "Sana", "detalle": "Sin anomalías"}
 
 @app.post("/api/analizar")
 async def analizar_imagen(imagen: UploadFile = File(...), usuario_id: int = Form(...), nombre_usuario: str = Form(...)):
     try:
-        contenido_imagen = await imagen.read()
-        img = Image.open(io.BytesIO(contenido_imagen))
-        img.verify()
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nombre_archivo = f"escaneo_{usuario_id}_{timestamp}.jpg"
-        ruta_imagen = os.path.join(CARPETA_IMAGENES, nombre_archivo)
-        with open(ruta_imagen, "wb") as f:
-            f.write(contenido_imagen)
-        
-        resultado_hf = analizar_con_huggingface(contenido_imagen)
-        if not resultado_hf["exito"]:
-            raise HTTPException(status_code=500, detail=resultado_hf["mensaje"])
-        
-        analisis_color = analizar_colores_hongos(contenido_imagen)
-        analisis = interpretar_resultado(resultado_hf["predicciones"], analisis_color)
-        
-        db.guardar_escaneo(usuario_id=usuario_id, nombre_usuario=nombre_usuario, ruta_imagen=ruta_imagen, resultado=analisis["resultado"], confianza=analisis["confianza"])
-        
-        return JSONResponse(content={"exito": True, "resultado": analisis["resultado"], "confianza": analisis["confianza"], "mensaje": analisis["mensaje"], "detalle": analisis.get("detalle", "")})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        cont = await imagen.read()
+        Image.open(io.BytesIO(cont)).verify()
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ruta = os.path.join(CARPETA_IMAGENES, f"escaneo_{usuario_id}_{ts}.jpg")
+        with open(ruta, "wb") as f: f.write(cont)
+        rhf = analizar_con_huggingface(cont)
+        if not rhf["exito"]: raise HTTPException(status_code=500, detail=rhf["mensaje"])
+        ac = analizar_colores_hongos(cont)
+        an = interpretar_resultado(rhf["predicciones"], ac)
+        db.guardar_escaneo(usuario_id, nombre_usuario, ruta, an["resultado"], an["confianza"])
+        return JSONResponse(content={"exito": True, "resultado": an["resultado"], "confianza": an["confianza"], "mensaje": an["mensaje"], "detalle": an.get("detalle","")})
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/historial/{usuario_id}")
 async def obtener_historial(usuario_id: int):
-    resultado = db.obtener_historial(usuario_id)
-    if resultado["exito"]:
-        return JSONResponse(content=resultado, status_code=200)
-    else:
-        return JSONResponse(content=resultado, status_code=500)
+    r = db.obtener_historial(usuario_id)
+    return JSONResponse(content=r, status_code=200 if r["exito"] else 500)
 
 @app.get("/api/estadisticas/{usuario_id}")
 async def obtener_estadisticas(usuario_id: int):
-    historial = db.obtener_historial(usuario_id)
-    if not historial["exito"]:
-        return JSONResponse(content={"exito": False, "mensaje": "Error"}, status_code=500)
-    total = len(historial["historial"])
-    enfermos = sum(1 for e in historial["historial"] if e["resultado"] == "Enferma")
-    return JSONResponse(content={"exito": True, "estadisticas": {"total_escaneos": total, "plantas_enfermas": enfermos, "plantas_sanas": total - enfermos}})
+    h = db.obtener_historial(usuario_id)
+    if not h["exito"]: return JSONResponse(content={"exito": False}, status_code=500)
+    t = len(h["historial"])
+    e = sum(1 for x in h["historial"] if x["resultado"]=="Enferma")
+    return JSONResponse(content={"exito": True, "estadisticas": {"total_escaneos": t, "plantas_enfermas": e, "plantas_sanas": t-e}})
 
 @app.get("/api/admin/usuarios")
 async def listar_todos_usuarios():
     try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        cursor.execute("""
-            SELECT id, nombre_usuario, fecha_creacion,
-                   (SELECT COUNT(*) FROM historial_escaneos WHERE usuario_id = usuarios.id) as total_escaneos
-            FROM usuarios ORDER BY fecha_creacion DESC
-        """)
-        usuarios = cursor.fetchall()
-        conexion.close()
-        lista_usuarios = []
-        for usuario in usuarios:
-            lista_usuarios.append({"id": usuario["id"], "nombre_usuario": usuario["nombre_usuario"], "fecha_creacion": usuario["fecha_creacion"], "total_escaneos": usuario["total_escaneos"]})
-        return JSONResponse(content={"exito": True, "usuarios": lista_usuarios})
-    except Exception as e:
-        return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
+        c = db.obtener_conexion()
+        cu = c.cursor()
+        cu.execute("SELECT id, nombre_usuario, fecha_creacion, (SELECT COUNT(*) FROM historial_escaneos WHERE usuario_id=usuarios.id) as total_escaneos FROM usuarios ORDER BY fecha_creacion DESC")
+        us = cu.fetchall()
+        c.close()
+        return JSONResponse(content={"exito": True, "usuarios": [{"id": u["id"], "nombre_usuario": u["nombre_usuario"], "fecha_creacion": u["fecha_creacion"], "total_escaneos": u["total_escaneos"]} for u in us]})
+    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 @app.delete("/api/admin/usuarios/{usuario_id}")
 async def eliminar_usuario(usuario_id: int):
     try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        cursor.execute("SELECT nombre_usuario FROM usuarios WHERE id = ?", (usuario_id,))
-        usuario = cursor.fetchone()
-        if usuario and usuario["nombre_usuario"].lower() == "admin":
-            return JSONResponse(content={"exito": False, "mensaje": "No se puede eliminar el usuario admin"}, status_code=400)
-        cursor.execute("DELETE FROM usuarios WHERE id = ?", (usuario_id,))
-        cursor.execute("DELETE FROM historial_escaneos WHERE usuario_id = ?", (usuario_id,))
-        conexion.commit()
-        conexion.close()
-        return JSONResponse(content={"exito": True, "mensaje": "Usuario eliminado correctamente"})
-    except Exception as e:
-        return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
+        c = db.obtener_conexion()
+        cu = c.cursor()
+        cu.execute("SELECT nombre_usuario FROM usuarios WHERE id=?", (usuario_id,))
+        u = cu.fetchone()
+        if u and u["nombre_usuario"].lower()=="admin": return JSONResponse(content={"exito": False, "mensaje": "No eliminar admin"}, status_code=400)
+        cu.execute("DELETE FROM usuarios WHERE id=?", (usuario_id,))
+        cu.execute("DELETE FROM historial_escaneos WHERE usuario_id=?", (usuario_id,))
+        c.commit()
+        c.close()
+        return JSONResponse(content={"exito": True, "mensaje": "Eliminado"})
+    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 @app.put("/api/admin/usuarios/{usuario_id}/contrasena")
 async def cambiar_contrasena_usuario(usuario_id: int, nueva_contrasena: str = Form(...)):
     try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        contrasena_encriptada = db.encriptar_contrasena(nueva_contrasena)
-        cursor.execute("UPDATE usuarios SET contrasena = ? WHERE id = ?", (contrasena_encriptada, usuario_id))
-        conexion.commit()
-        conexion.close()
-        return JSONResponse(content={"exito": True, "mensaje": "Contraseña actualizada correctamente"})
-    except Exception as e:
-        return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
+        c = db.obtener_conexion()
+        cu = c.cursor()
+        ce = db.encriptar_contrasena(nueva_contrasena)
+        cu.execute("UPDATE usuarios SET contrasena=? WHERE id=?", (ce, usuario_id))
+        c.commit()
+        c.close()
+        return JSONResponse(content={"exito": True, "mensaje": "Actualizada"})
+    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 @app.get("/api/admin/historial-completo")
 async def obtener_historial_completo():
     try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        cursor.execute("SELECT * FROM historial_escaneos ORDER BY fecha_escaneo DESC")
-        escaneos = cursor.fetchall()
-        conexion.close()
-        historial = []
-        for escaneo in escaneos:
-            historial.append({"id": escaneo["id"], "usuario_id": escaneo["usuario_id"], "nombre_usuario": escaneo["nombre_usuario"], "resultado": escaneo["resultado"], "confianza": escaneo["confianza"], "fecha_escaneo": escaneo["fecha_escaneo"]})
-        return JSONResponse(content={"exito": True, "historial": historial})
-    except Exception as e:
-        return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
+        c = db.obtener_conexion()
+        cu = c.cursor()
+        cu.execute("SELECT * FROM historial_escaneos ORDER BY fecha_escaneo DESC")
+        es = cu.fetchall()
+        c.close()
+        return JSONResponse(content={"exito": True, "historial": [{"id": e["id"], "usuario_id": e["usuario_id"], "nombre_usuario": e["nombre_usuario"], "resultado": e["resultado"], "confianza": e["confianza"], "fecha_escaneo": e["fecha_escaneo"]} for e in es]})
+    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 if __name__ == "__main__":
-    print("🌺 Iniciando servidor Mayaflora API...")
-    print(f"📍 Servidor corriendo en http://{HOST}:{PORT}")
-    print(f"📚 Documentación disponible en http://{HOST}:{PORT}/docs")
+    print("🌺 Mayaflora API")
     uvicorn.run(app, host=HOST, port=PORT)
