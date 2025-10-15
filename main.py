@@ -25,6 +25,8 @@ app.add_middleware(
 
 # Inicializar base de datos
 db = BaseDatos(NOMBRE_BASE_DATOS)
+
+# Crear usuario admin automáticamente si no existe
 try:
     resultado = db.crear_usuario("admin", "admin123")
     if resultado["exito"]:
@@ -33,7 +35,6 @@ try:
         print("ℹ️ Usuario admin ya existe")
 except Exception as e:
     print(f"⚠️ Error al crear admin: {e}")
-
 
 # Crear carpeta para imágenes si no existe
 if not os.path.exists(CARPETA_IMAGENES):
@@ -225,8 +226,6 @@ def interpretar_resultado(predicciones, analisis_color):
     tiene_enfermedad_hf = any(palabra in etiqueta for palabra in PALABRAS_CLAVE_ENFERMEDAD)
     
     # Combinar análisis
-    # Si el análisis de color detecta mucho (>60), es enfermedad
-    # O si HF detecta enfermedad con confianza media
     if score_color > 60:
         confianza_final = min(score_color + 10, 95)
         return {
@@ -364,133 +363,3 @@ if __name__ == "__main__":
     print(f"📍 Servidor corriendo en http://{HOST}:{PORT}")
     print(f"📚 Documentación disponible en http://{HOST}:{PORT}/docs")
     uvicorn.run(app, host=HOST, port=PORT)
-
-
-    @app.get("/api/admin/usuarios")
-async def listar_todos_usuarios():
-    """Lista todos los usuarios (solo admin)"""
-    try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        
-        cursor.execute("""
-            SELECT id, nombre_usuario, fecha_creacion 
-            FROM usuarios 
-            ORDER BY fecha_creacion DESC
-        """)
-        usuarios = cursor.fetchall()
-        conexion.close()
-        
-        lista_usuarios = []
-        for usuario in usuarios:
-            lista_usuarios.append({
-                "id": usuario["id"],
-                "nombre_usuario": usuario["nombre_usuario"],
-                "fecha_creacion": usuario["fecha_creacion"]
-            })
-        
-        return JSONResponse(content={
-            "exito": True,
-            "usuarios": lista_usuarios
-        })
-    except Exception as e:
-        return JSONResponse(content={
-            "exito": False,
-            "mensaje": str(e)
-        }, status_code=500)
-
-@app.delete("/api/admin/usuarios/{usuario_id}")
-async def eliminar_usuario(usuario_id: int):
-    """Elimina un usuario (solo admin)"""
-    try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        
-        # No permitir eliminar admin
-        cursor.execute("SELECT nombre_usuario FROM usuarios WHERE id = ?", (usuario_id,))
-        usuario = cursor.fetchone()
-        
-        if usuario and usuario["nombre_usuario"].lower() == "admin":
-            return JSONResponse(content={
-                "exito": False,
-                "mensaje": "No se puede eliminar el usuario admin"
-            }, status_code=400)
-        
-        cursor.execute("DELETE FROM usuarios WHERE id = ?", (usuario_id,))
-        cursor.execute("DELETE FROM historial_escaneos WHERE usuario_id = ?", (usuario_id,))
-        conexion.commit()
-        conexion.close()
-        
-        return JSONResponse(content={
-            "exito": True,
-            "mensaje": "Usuario eliminado correctamente"
-        })
-    except Exception as e:
-        return JSONResponse(content={
-            "exito": False,
-            "mensaje": str(e)
-        }, status_code=500)
-
-@app.put("/api/admin/usuarios/{usuario_id}/contrasena")
-async def cambiar_contrasena_usuario(
-    usuario_id: int,
-    nueva_contrasena: str = Form(...)
-):
-    """Cambia la contraseña de un usuario (solo admin)"""
-    try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        
-        contrasena_encriptada = db.encriptar_contrasena(nueva_contrasena)
-        cursor.execute(
-            "UPDATE usuarios SET contrasena = ? WHERE id = ?",
-            (contrasena_encriptada, usuario_id)
-        )
-        conexion.commit()
-        conexion.close()
-        
-        return JSONResponse(content={
-            "exito": True,
-            "mensaje": "Contraseña actualizada correctamente"
-        })
-    except Exception as e:
-        return JSONResponse(content={
-            "exito": False,
-            "mensaje": str(e)
-        }, status_code=500)
-
-@app.get("/api/admin/historial-completo")
-async def obtener_historial_completo():
-    """Obtiene el historial de TODOS los usuarios (solo admin)"""
-    try:
-        conexion = db.obtener_conexion()
-        cursor = conexion.cursor()
-        
-        cursor.execute("""
-            SELECT * FROM historial_escaneos
-            ORDER BY fecha_escaneo DESC
-        """)
-        
-        escaneos = cursor.fetchall()
-        conexion.close()
-        
-        historial = []
-        for escaneo in escaneos:
-            historial.append({
-                "id": escaneo["id"],
-                "usuario_id": escaneo["usuario_id"],
-                "nombre_usuario": escaneo["nombre_usuario"],
-                "resultado": escaneo["resultado"],
-                "confianza": escaneo["confianza"],
-                "fecha_escaneo": escaneo["fecha_escaneo"]
-            })
-        
-        return JSONResponse(content={
-            "exito": True,
-            "historial": historial
-        })
-    except Exception as e:
-        return JSONResponse(content={
-            "exito": False,
-            "mensaje": str(e)
-        }, status_code=500)
