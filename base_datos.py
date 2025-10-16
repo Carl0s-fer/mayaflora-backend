@@ -17,7 +17,16 @@ class BaseDatos:
     
     def obtener_conexion(self):
         """Crea y retorna una conexión a PostgreSQL"""
+        # Forzar IPv4 para evitar problemas con IPv6
+        import socket
+        old_getaddrinfo = socket.getaddrinfo
+        def new_getaddrinfo(*args, **kwargs):
+            responses = old_getaddrinfo(*args, **kwargs)
+            return [response for response in responses if response[0] == socket.AF_INET]
+        socket.getaddrinfo = new_getaddrinfo
+        
         conexion = psycopg2.connect(self.connection_string)
+        socket.getaddrinfo = old_getaddrinfo
         return conexion
     
     def inicializar_base_datos(self):
