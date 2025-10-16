@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+codigo = '''from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -10,21 +10,10 @@ from datetime import datetime
 import numpy as np
 from base_datos import BaseDatos
 from configuracion import *
-from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
-
-# Cargar variables de entorno
-load_dotenv()
 
 app = FastAPI(title="Mayaflora API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-# Inicializar base de datos con la URL de Supabase
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL no está configurada en las variables de entorno")
-
-db = BaseDatos(DATABASE_URL)
+db = BaseDatos(NOMBRE_BASE_DATOS)
 
 try:
     resultado = db.crear_usuario("admin", "admin123")
@@ -34,7 +23,7 @@ except: pass
 if not os.path.exists(CARPETA_IMAGENES): os.makedirs(CARPETA_IMAGENES)
 
 @app.get("/")
-def raiz(): return {"mensaje": "Mayaflora API", "version": "2.0 - PostgreSQL", "estado": "activo"}
+def raiz(): return {"mensaje": "Mayaflora API", "version": "1.0"}
 
 @app.post("/api/registro")
 async def registrar_usuario(nombre_usuario: str = Form(...), contrasena: str = Form(...)):
@@ -120,35 +109,24 @@ async def obtener_estadisticas(usuario_id: int):
 async def listar_todos_usuarios():
     try:
         c = db.obtener_conexion()
-        cu = c.cursor(cursor_factory=RealDictCursor)
-        cu.execute("""
-            SELECT u.id, u.nombre_usuario, u.fecha_creacion, 
-                   COUNT(h.id) as total_escaneos 
-            FROM usuarios u
-            LEFT JOIN historial_escaneos h ON u.id = h.usuario_id
-            GROUP BY u.id, u.nombre_usuario, u.fecha_creacion
-            ORDER BY u.fecha_creacion DESC
-        """)
+        cu = c.cursor()
+        cu.execute("SELECT id, nombre_usuario, fecha_creacion, (SELECT COUNT(*) FROM historial_escaneos WHERE usuario_id=usuarios.id) as total_escaneos FROM usuarios ORDER BY fecha_creacion DESC")
         us = cu.fetchall()
-        cu.close()
         c.close()
-        return JSONResponse(content={"exito": True, "usuarios": [{"id": u["id"], "nombre_usuario": u["nombre_usuario"], "fecha_creacion": u["fecha_creacion"].isoformat(), "total_escaneos": u["total_escaneos"]} for u in us]})
+        return JSONResponse(content={"exito": True, "usuarios": [{"id": u["id"], "nombre_usuario": u["nombre_usuario"], "fecha_creacion": u["fecha_creacion"], "total_escaneos": u["total_escaneos"]} for u in us]})
     except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 @app.delete("/api/admin/usuarios/{usuario_id}")
 async def eliminar_usuario(usuario_id: int):
     try:
         c = db.obtener_conexion()
-        cu = c.cursor(cursor_factory=RealDictCursor)
-        cu.execute("SELECT nombre_usuario FROM usuarios WHERE id=%s", (usuario_id,))
+        cu = c.cursor()
+        cu.execute("SELECT nombre_usuario FROM usuarios WHERE id=?", (usuario_id,))
         u = cu.fetchone()
-        if u and u["nombre_usuario"].lower()=="admin": 
-            cu.close()
-            c.close()
-            return JSONResponse(content={"exito": False, "mensaje": "No eliminar admin"}, status_code=400)
-        cu.execute("DELETE FROM usuarios WHERE id=%s", (usuario_id,))
+        if u and u["nombre_usuario"].lower()=="admin": return JSONResponse(content={"exito": False, "mensaje": "No eliminar admin"}, status_code=400)
+        cu.execute("DELETE FROM usuarios WHERE id=?", (usuario_id,))
+        cu.execute("DELETE FROM historial_escaneos WHERE usuario_id=?", (usuario_id,))
         c.commit()
-        cu.close()
         c.close()
         return JSONResponse(content={"exito": True, "mensaje": "Eliminado"})
     except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
@@ -159,9 +137,8 @@ async def cambiar_contrasena_usuario(usuario_id: int, nueva_contrasena: str = Fo
         c = db.obtener_conexion()
         cu = c.cursor()
         ce = db.encriptar_contrasena(nueva_contrasena)
-        cu.execute("UPDATE usuarios SET contrasena=%s WHERE id=%s", (ce, usuario_id))
+        cu.execute("UPDATE usuarios SET contrasena=? WHERE id=?", (ce, usuario_id))
         c.commit()
-        cu.close()
         c.close()
         return JSONResponse(content={"exito": True, "mensaje": "Actualizada"})
     except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
@@ -170,15 +147,18 @@ async def cambiar_contrasena_usuario(usuario_id: int, nueva_contrasena: str = Fo
 async def obtener_historial_completo():
     try:
         c = db.obtener_conexion()
-        cu = c.cursor(cursor_factory=RealDictCursor)
+        cu = c.cursor()
         cu.execute("SELECT * FROM historial_escaneos ORDER BY fecha_escaneo DESC")
         es = cu.fetchall()
-        cu.close()
         c.close()
-        return JSONResponse(content={"exito": True, "historial": [{"id": e["id"], "usuario_id": e["usuario_id"], "nombre_usuario": e["nombre_usuario"], "resultado": e["resultado"], "confianza": e["confianza"], "fecha_escaneo": e["fecha_escaneo"].isoformat()} for e in es]})
+        return JSONResponse(content={"exito": True, "historial": [{"id": e["id"], "usuario_id": e["usuario_id"], "nombre_usuario": e["nombre_usuario"], "resultado": e["resultado"], "confianza": e["confianza"], "fecha_escaneo": e["fecha_escaneo"]} for e in es]})
     except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 if __name__ == "__main__":
-    print("🌺 Mayaflora API - PostgreSQL")
-    print(f"🔗 DATABASE_URL configurada: {'✅' if DATABASE_URL else '❌'}")
+    print("🌺 Mayaflora API")
     uvicorn.run(app, host=HOST, port=PORT)
+'''
+
+with open('main.py', 'w', encoding='utf-8') as f:
+    f.write(codigo)
+print("✅ Archivo main.py generado")
