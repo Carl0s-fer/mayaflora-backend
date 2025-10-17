@@ -198,12 +198,19 @@ async def limpiar_historial_completo():
         c = db.obtener_conexion()
         cu = c.cursor()
         cu.execute("DELETE FROM historial_escaneos")
-        c.commit()
         filas_eliminadas = cu.rowcount
+        c.commit()
         cu.close()
         c.close()
-        return JSONResponse(content={"exito": True, "mensaje": f"Se eliminaron {filas_eliminadas} registros"})
-    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
+        return JSONResponse(
+            content={"exito": True, "mensaje": f"Se eliminaron {filas_eliminadas} registros"},
+            status_code=200
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={"exito": False, "mensaje": str(e)},
+            status_code=500
+        )
 
 if __name__ == "__main__":
     print("🌺 Mayaflora API - PostgreSQL")
