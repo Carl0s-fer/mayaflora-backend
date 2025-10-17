@@ -178,19 +178,6 @@ async def obtener_historial_completo():
         return JSONResponse(content={"exito": True, "historial": [{"id": e["id"], "usuario_id": e["usuario_id"], "nombre_usuario": e["nombre_usuario"], "resultado": e["resultado"], "confianza": e["confianza"], "fecha_escaneo": e["fecha_escaneo"].isoformat()} for e in es]})
     except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
-@app.delete("/api/admin/historial/{escaneo_id}")
-async def eliminar_registro_historial(escaneo_id: int):
-    """Elimina un registro específico del historial (solo admin)"""
-    try:
-        c = db.obtener_conexion()
-        cu = c.cursor()
-        cu.execute("DELETE FROM historial_escaneos WHERE id=%s", (escaneo_id,))
-        c.commit()
-        cu.close()
-        c.close()
-        return JSONResponse(content={"exito": True, "mensaje": "Registro eliminado"})
-    except Exception as e: return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
-
 @app.delete("/api/admin/historial/limpiar-todo")
 async def limpiar_historial_completo():
     """Elimina TODOS los registros del historial (solo admin)"""
@@ -211,6 +198,20 @@ async def limpiar_historial_completo():
             content={"exito": False, "mensaje": str(e)},
             status_code=500
         )
+
+@app.delete("/api/admin/historial/{escaneo_id}")
+async def eliminar_registro_historial(escaneo_id: int):
+    """Elimina un registro específico del historial (solo admin)"""
+    try:
+        c = db.obtener_conexion()
+        cu = c.cursor()
+        cu.execute("DELETE FROM historial_escaneos WHERE id=%s", (escaneo_id,))
+        c.commit()
+        cu.close()
+        c.close()
+        return JSONResponse(content={"exito": True, "mensaje": "Registro eliminado"})
+    except Exception as e: 
+        return JSONResponse(content={"exito": False, "mensaje": str(e)}, status_code=500)
 
 if __name__ == "__main__":
     print("🌺 Mayaflora API - PostgreSQL")
