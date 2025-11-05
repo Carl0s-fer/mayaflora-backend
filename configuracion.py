@@ -8,7 +8,7 @@ HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
 HUGGINGFACE_MODEL = "google/vit-base-patch16-224"
 
 # URL de la API de Hugging Face
-HUGGINGFACE_API_URL = f"https://api-inference.huggingface.co/models/{HUGGINGFACE_MODEL}"
+HUGGINGFACE_API_URL = f"https://router.huggingface.co/hf-inference/models/{HUGGINGFACE_MODEL}"
 
 # Configuración del servidor
 HOST = "0.0.0.0"
