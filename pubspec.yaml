@@ -1,0 +1,31 @@
+name: mayaflora_detector_orquideas
+description: "Aplicación de detección de hongos en hojas de orquídeas para Mayaflora"
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.10.5+5
+  http: ^1.1.0
+  image_picker: ^1.0.4
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  permission_handler: ^11.0.1
+  intl: ^0.18.1
+  share_plus: ^7.2.1
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/icon.png"

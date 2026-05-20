@@ -1,0 +1,41 @@
+# Flutter / Dart
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/debug.keystore
+*.jks
+*.keystore
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Python / Backend
+backend/__pycache__/
+backend/*.pyc
+backend/imagenes_escaneos/
+backend/.env
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
