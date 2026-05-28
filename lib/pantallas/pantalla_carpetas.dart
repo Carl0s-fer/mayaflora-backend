@@ -175,12 +175,39 @@ class _TarjetaCarpeta extends StatelessWidget {
     required this.onEliminar,
   });
 
+  Color? get _colorBorde {
+    if (carpeta.estaVacia) return null;
+    if (carpeta.tieneEnfermas) return ColoresMayaflora.error;
+    if (carpeta.todasSanas) return ColoresMayaflora.exito;
+    return null;
+  }
+
+  Color get _colorIcono {
+    if (carpeta.tieneEnfermas) return ColoresMayaflora.error;
+    if (carpeta.todasSanas) return ColoresMayaflora.exito;
+    return ColoresMayaflora.primario;
+  }
+
+  String get _textoEstado {
+    if (carpeta.estaVacia) return 'Vacía';
+    if (carpeta.tieneEnfermas)
+      return '${carpeta.plantasEnfermas} enferma${carpeta.plantasEnfermas > 1 ? 's' : ''}';
+    if (carpeta.todasSanas) return 'Todas sanas';
+    return '${carpeta.totalPlantas} ${carpeta.totalPlantas == 1 ? 'planta' : 'plantas'}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final borde = _colorBorde;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: borde != null
+            ? BorderSide(color: borde, width: 2.5)
+            : BorderSide.none,
+      ),
+      elevation: borde != null ? 4 : 2,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
@@ -192,10 +219,10 @@ class _TarjetaCarpeta extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: ColoresMayaflora.primario.withOpacity(0.1),
+                  color: _colorIcono.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.folder, color: ColoresMayaflora.primario, size: 32),
+                child: Icon(Icons.folder, color: _colorIcono, size: 32),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -205,9 +232,31 @@ class _TarjetaCarpeta extends StatelessWidget {
                     Text(carpeta.nombre,
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(
-                      '${carpeta.totalPlantas} ${carpeta.totalPlantas == 1 ? 'planta' : 'plantas'}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    Row(
+                      children: [
+                        if (borde != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(
+                              carpeta.tieneEnfermas ? Icons.warning_rounded : Icons.check_circle,
+                              size: 14,
+                              color: borde,
+                            ),
+                          ),
+                        Text(
+                          _textoEstado,
+                          style: TextStyle(
+                            color: borde ?? Colors.grey[600],
+                            fontSize: 13,
+                            fontWeight: borde != null ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                        if (!carpeta.estaVacia && carpeta.totalPlantas > 1 && borde != null)
+                          Text(
+                            '  ·  ${carpeta.totalPlantas} total',
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                          ),
+                      ],
                     ),
                   ],
                 ),

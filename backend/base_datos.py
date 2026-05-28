@@ -217,7 +217,10 @@ class BaseDatos:
             conexion = self.obtener_conexion()
             cursor = conexion.cursor(cursor_factory=RealDictCursor)
             cursor.execute('''
-                SELECT c.*, COUNT(p.id) as total_plantas
+                SELECT c.*,
+                    COUNT(p.id) as total_plantas,
+                    SUM(CASE WHEN p.estado_actual = 'Enferma' THEN 1 ELSE 0 END) as plantas_enfermas,
+                    SUM(CASE WHEN p.estado_actual = 'Sana' THEN 1 ELSE 0 END) as plantas_sanas
                 FROM carpetas c
                 LEFT JOIN plantas p ON p.carpeta_id = c.id
                 WHERE c.usuario_id = %s
@@ -230,7 +233,9 @@ class BaseDatos:
             return {"exito": True, "carpetas": [
                 {"id": c["id"], "nombre": c["nombre"],
                  "fecha_creacion": c["fecha_creacion"].isoformat(),
-                 "total_plantas": c["total_plantas"]} for c in carpetas
+                 "total_plantas": c["total_plantas"],
+                 "plantas_enfermas": int(c["plantas_enfermas"] or 0),
+                 "plantas_sanas": int(c["plantas_sanas"] or 0)} for c in carpetas
             ]}
         except Exception as e:
             return {"exito": False, "mensaje": str(e)}
